@@ -6,24 +6,26 @@ You can test this file on its own, without the web app:
 from pathlib import Path
 
 import numpy as np
+import joblib
+import pandas as pd
 
 MODEL_FILE = Path(__file__).parent / "model.keras"
+PREPROCESSOR_FILE = Path(__file__).parent / "nsclc_preprocessor.joblib"
 
 # The model expects its 8 inputs in exactly this order (the column order of
 # the training data). These are also the column names in the database.
 FEATURES = [
-    'Leeftijd',
-    'Geslacht',
-    'Vitale_status_interval',
-    'Tumorsoort',
-    'Diagnose_basis',
-    'Morfologie',
-    'Gedrag',
-    'Differentiatiegraad',
-    'Stadium',
-    'Chemotherapie',
-    'Targettherapie',
-    'Radiotherapie',
+    'leeft',
+    'gesl',
+    'tumsoort',
+    'diag_basis',
+    'morf',
+    'gedrag',
+    'diffgrad',
+    'stadium',
+    'chemo',
+    'target',
+    'rt',
     'SCLC'
 ]
 
@@ -34,20 +36,18 @@ def load_model():
 
     return keras.models.load_model(str(MODEL_FILE), compile=False)
 
+def load_preprocessor():
+    return joblib.load(PREPROCESSOR_FILE)
 
-def preprocess(x):
-    """Transform the raw input values the same way as during training.
+preprocessor = load_preprocessor()
 
-    x is an array with one row of raw values (in FEATURES order) per patient.
-    By default nothing happens. If your model was trained on transformed inputs
-    (scaled, encoded, ...) and that step is NOT inside the model itself, do it here.
-    Everything in this app goes through this function, so the app and your
-    checks always see the same inputs.
-    """
-    return x
+def preprocess(x, preprocessor=preprocessor):
+    """Apply the same transformations used during training."""
+    df = pd.DataFrame(x, columns=FEATURES)
+    return preprocessor.transform(df)
 
 
-def make_input(patient, stadium=None):
+def make_input(patient, preprocessor=preprocessor, stadium=None):
     """Turn a patient (a dict with the FEATURES as keys) into the model's input.
 
     If Stadium is given, it replaces the patient's stored value
@@ -55,7 +55,7 @@ def make_input(patient, stadium=None):
     """
     values = dict(patient)
     if stadium is not None:
-        values["Stadium"] = stadium
+        values["stadium"] = stadium
     name = values.get("display_name", "this patient")
     for feature in FEATURES:
         if feature not in values:
@@ -65,7 +65,7 @@ def make_input(patient, stadium=None):
             raise ValueError(f"{name} has no value for '{feature}' (it is empty in the database). "
                              "The model needs a number for every input.")
     raw = np.array([[float(values[feature]) for feature in FEATURES]])
-    return preprocess(raw)
+    return preprocess(raw, preprocessor)
 
 
 def check_model(model, X):
@@ -88,25 +88,24 @@ def check_model(model, X):
     return None
 
 
-def get_prediction(model, patient, stadium=None):
-    """Return the model's output for one patient: a number between 0 and 1."""
-    x = make_input(patient, stadium)
+def get_prediction(model, patient, preprocessor=preprocessor, stadium=None):
+    x = make_input(patient, preprocessor, stadium)
     return float(model.predict(x, verbose=0)[0, 0])
 
 
 if __name__ == "__main__":
     # Checkpoint: the five patients from database.sql.
     examples = [dict(zip(FEATURES, values)) for values in [
-        [53, 1, 586, 302310, 7, 8073, 2, 2, 6, 1, 0, 0, 0],   # Patient 1
-        [24, 1, 1012, 302310, 2, 8243, 3, 1, 4, 2, 1, 0, 0],
-        [44, 2, 230, 302310, 7, 8243, 3, 2, 7, 2, 2, 0, 1],
-        [29, 2, 724, 302310, 7, 8250, 3, 1, 9, 0, 0, 2, 0]
+        [53, 1, 302310, 7, 8073, 2, 2, 6, 1, 0, 0, 0],   # Patient 1
+        [24, 1, 302310, 2, 8243, 3, 1, 4, 2, 1, 0, 0],
+        [44, 2, 302310, 7, 8243, 3, 2, 7, 2, 2, 0, 1],
+        [29, 2, 302310, 7, 8250, 3, 1, 9, 0, 0, 2, 0]
     ]]
     model = load_model()
-    problem = check_model(model, np.vstack([make_input(p) for p in examples]))
+    problem = check_model(model, np.vstack([make_input(p, preprocessor) for p in examples]))
     if problem:
         raise SystemExit("Problem with model.keras: " + problem)
     susan = examples[0]
-    print("Model input: ", make_input(susan))
-    print("Prediction:  ", round(get_prediction(model, susan), 3))
-    print("With Stadium = 5:", round(get_prediction(model, susan, stadium=5), 3))
+    print("Model input: ", make_input(susan, preprocessor))
+    print("Prediction:  ", round(get_prediction(model, susan, preprocessor), 3))
+    print("With Stadium = 5:", round(get_prediction(model, susan, preprocessor, stadium=5), 3))
