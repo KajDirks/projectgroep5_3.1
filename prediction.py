@@ -47,7 +47,7 @@ def preprocess(x, preprocessor=preprocessor):
     return preprocessor.transform(df)
 
 
-def make_input(patient, preprocessor=preprocessor, stadium=None):
+def make_input(patient, preprocessor=preprocessor, stadium=None, leeft=None,):
     """Turn a patient (a dict with the FEATURES as keys) into the model's input.
 
     If Stadium is given, it replaces the patient's stored value
@@ -56,6 +56,8 @@ def make_input(patient, preprocessor=preprocessor, stadium=None):
     values = dict(patient)
     if stadium is not None:
         values["stadium"] = stadium
+    if leeft is not None:
+        values["leeft"] = leeft
     name = values.get("display_name", "this patient")
     for feature in FEATURES:
         if feature not in values:
@@ -88,8 +90,8 @@ def check_model(model, X):
     return None
 
 
-def get_prediction(model, patient, preprocessor=preprocessor, stadium=None):
-    x = make_input(patient, preprocessor, stadium)
+def get_prediction(model, patient, preprocessor=preprocessor, stadium=None, leeft=None,):
+    x = make_input(patient, preprocessor, stadium, leeft)
     return float(model.predict(x, verbose=0)[0, 0])
 
 
